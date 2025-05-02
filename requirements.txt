@@ -1,0 +1,11 @@
+pandas
+numpy
+pyarrow
+transformers
+sentence_transformers
+chromadb
+uuid
+openai
+anthropic
+google-generativeai
+pyyaml
