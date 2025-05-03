@@ -7,3 +7,5 @@ data/raw/*
 
 embeddings/chroma_db/*
 embeddings/chroma_test_db/*
+
+results/*
