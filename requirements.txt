@@ -1,5 +1,7 @@
 pandas
 numpy
+matplotlib
+seaborn
 pyarrow
 transformers
 sentence_transformers
