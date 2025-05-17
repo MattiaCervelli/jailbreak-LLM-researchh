@@ -4,8 +4,6 @@ import yaml # Import YAML
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Union
 
-# --- (Keep existing imports and setup) ---
-# Ensure the src directory is accessible for imports
 import sys
 try:
     PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -82,267 +80,159 @@ class AttackGenerator:
 
 
     def _load_prompt_templates(self, path: Union[str, Path]) -> Dict[str, str]:
-        """Loads prompt templates from a YAML file."""
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                templates = yaml.safe_load(f)
-            if not isinstance(templates, dict):
-                raise ValueError("Prompt template file should be a dictionary (YAML mapping).")
-            logger.info(f"Successfully loaded prompt templates from: {path}")
-            return templates
-        except FileNotFoundError:
-            logger.error(f"Prompt template file not found at: {path}")
-            raise
-        except yaml.YAMLError as e:
-            logger.error(f"Error parsing YAML template file {path}: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Error loading prompt templates from {path}: {e}")
-            raise
+            # (Keep this function as it was in your provided code - lines 84-101)
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    templates = yaml.safe_load(f)
+                if not isinstance(templates, dict):
+                    raise ValueError("Prompt template file should be a dictionary (YAML mapping).")
+                logger.info(f"Successfully loaded prompt templates from: {path}")
+                return templates
+            except FileNotFoundError:
+                logger.error(f"Prompt template file not found at: {path}")
+                raise
+            except yaml.YAMLError as e:
+                logger.error(f"Error parsing YAML template file {path}: {e}")
+                raise
+            except Exception as e:
+                logger.error(f"Error loading prompt templates from {path}: {e}")
+                raise
 
+        # START OF MODIFIED SECTION for _format_retrieved_examples
     def _format_retrieved_examples(self, search_results: Optional[Dict[str, List[Any]]]) -> str:
-        """Formats the retrieved documents for inclusion in the prompt."""
-        if not search_results or not search_results.get('documents'):
-            return "No relevant examples found in the database."
+            """Formats the retrieved documents and their metadata for inclusion in the prompt."""
+            if not search_results or not search_results.get('documents'):
+                return "No relevant examples found in the database."
 
-        formatted = ""
-        for i, doc_text in enumerate(search_results['documents']):
-            # Add more metadata to the examples if helpful for the generator LLM
-            meta = search_results['metadatas'][i] if search_results.get('metadatas') and i < len(search_results['metadatas']) else {}
-            source = meta.get('source_dataset', 'unknown')
-            # Maybe include technique if available in metadata? technique = meta.get('technique', 'unknown')
-            formatted += f"{i+1}. [Source: {source}] {doc_text.strip()}\n"
+            formatted_output_str = "" 
+            for i, doc_text in enumerate(search_results['documents']): 
+                meta = search_results['metadatas'][i] if search_results.get('metadatas') and i < len(search_results['metadatas']) else {}
+                
+                source = meta.get('source_dataset', 'unknown_source')
+                original_goal_text = meta.get('original_harmful_intent', meta.get('goal', 'Goal N/A')) # Fallback to 'goal' if new key isn't there
+                outcome_text = meta.get('outcome_classification', 'OUTCOME_UNKNOWN')
+                
+                rating_info = f" (Rating: {meta.get('rating', 'N/A')})" if 'rating' in meta and source == 'anthropic' else ""
+                jbb_gpt4_cf_info = f" (gpt4_cf: {meta.get('gpt4_cf', 'N/A')})" if 'gpt4_cf' in meta and source == 'jbb' else ""
+                
+                formatted_output_str += f"Example {i+1} (Source: {source}):\n"
+                formatted_output_str += f"  Original Harmful Goal: {original_goal_text}\n"
+                formatted_output_str += f"  Retrieved Jailbreak/Request Text: {doc_text.strip()}\n" 
+                formatted_output_str += f"  Outcome of this original attempt: {outcome_text}{rating_info}{jbb_gpt4_cf_info}\n"
+                # You can add more specific metadata if useful for a particular source.
+                # For instance, for 'jbb', you might want to show 'human_majority' as well.
+                # if source == 'jbb' and 'human_majority' in meta:
+                #     formatted_output_str += f"    JBB Human Majority: {meta.get('human_majority')}\n"
+                formatted_output_str += "---\n"
+                
+            return formatted_output_str.strip() if formatted_output_str else "No relevant examples found."
+        # END OF MODIFIED SECTION
 
-        return formatted.strip() if formatted else "No relevant examples found."
-
+        # START OF MODIFIED SECTION for _get_topic_hint
     def _get_topic_hint(self, seed_query: str, search_results: Optional[Dict[str, List[Any]]]) -> str:
-        """Generates a brief hint about the topic based on query and results."""
-        # Basic implementation: use the seed query itself, or potentially summarize keywords from results later.
-        # For now, just return the seed query as the primary topic indicator.
-        # Could analyze metadata categories if available and consistent.
-        # Example: if metadata has 'category' or 'behavior' keys.
-        if search_results and search_results.get('metadatas'):
-            categories = set()
-            behaviors = set()
-            for meta in search_results['metadatas']:
-                if 'category' in meta: categories.add(str(meta['category']))
-                if 'behavior' in meta: behaviors.add(str(meta['behavior'])) # Assuming 'behavior' key exists from JBB data
-            if categories or behaviors:
-                return f"Topic Hint: {'/'.join(list(categories)[:2]) or '/'.join(list(behaviors)[:2])} (Derived from examples related to '{seed_query[:30]}...')"
-
-        return f"'{seed_query[:50]}...'" # Fallback to using the query itself
-
+            """Generates a brief hint about the topic based on query and retrieved example intents."""
+            if search_results and search_results.get('metadatas'):
+                intents_from_results = []
+                for meta in search_results['metadatas'][:3]: # Look at top 3 for hints
+                    # Use the standardized key, with fallback to 'goal' for older embedded data
+                    intent = meta.get('original_harmful_intent', meta.get('goal'))
+                    if intent and str(intent) not in intents_from_results: # Ensure unique and string
+                        intents_from_results.append(str(intent)[:70] + "...") # Truncate long intents
+                
+                if intents_from_results:
+                    return f"Seed Query: '{seed_query[:50]}...'. Related example intents: [{'; '.join(intents_from_results)}]"
+            
+            return f"Seed Query: '{seed_query[:50]}...'" # Fallback
+        # END OF MODIFIED SECTION
 
     def generate_attack(
-        self,
-        seed_query: str, # Changed from target_goal
-        technique: str = 'generic', # Added technique parameter
-        k: Optional[int] = None,
-        retrieval_filter: Optional[Dict[str, Any]] = None,
-        generation_options: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """
-        Generates a single jailbreak attack prompt for the given seed/topic using RAG
-        and a specified technique.
+            self,
+            seed_query: str, 
+            technique: str = 'generic', 
+            k: Optional[int] = None,
+            retrieval_filter: Optional[Dict[str, Any]] = None,
+            generation_options: Optional[Dict[str, Any]] = None
+        ) -> Dict[str, Any]:
+            # (Keep this function largely as it was in your provided code - lines 144-269)
+            # The main change is that it now calls the modified _format_retrieved_examples and _get_topic_hint
+            start_time = time.time()
+            k_to_use = k if k is not None else self.default_k # Renamed to avoid conflict with outer k
+            result = {
+                "seed_query": seed_query,
+                "technique": technique,
+                "retrieved_examples": None,
+                "topic_hint": None, 
+                "generator_prompt": None,
+                "generated_attack_raw": None,
+                "generated_attack_cleaned": None,
+                "success": False,
+                "error": None
+            }
+            logger.info(f"Generating attack using technique '{technique}' for seed query: '{seed_query[:100]}...'")
 
-        Args:
-            seed_query: A query string or topic description used for retrieving
-                        relevant examples.
-            technique: The generation technique to use (must match a key in
-                       the loaded prompt_templates). Defaults to 'generic'.
-            k: Number of examples to retrieve. Overrides default_k if provided.
-            retrieval_filter: Optional metadata filter for vector store search.
-            generation_options: Optional parameters for the generator LLM.
+            search_results = None
+            try:
+                logger.debug(f"Embedding query for retrieval: '{seed_query[:100]}...'")
+                query_embedding = self.query_embedder.encode(seed_query)
+                logger.info(f"Retrieving {k_to_use} examples from vector store. Filter: {retrieval_filter}")
+                search_results = self.retriever.search(
+                    query=query_embedding,
+                    k=k_to_use,
+                    filter_criteria=retrieval_filter
+                )
+                result["retrieved_examples"] = search_results
+                if search_results and search_results.get('ids'): # Check if 'ids' exist and is not empty
+                    logger.info(f"Retrieved {len(search_results['ids'])} examples.")
+                else:
+                    logger.warning("Retrieval returned no valid examples (search_results or ids missing/empty).")
+            except Exception as e:
+                logger.error(f"Error during retrieval phase: {e}", exc_info=True)
+                result["error"] = f"Retrieval failed: {e}"
 
-        Returns:
-            A dictionary containing generation results (see previous definition).
-            The 'generated_attack_cleaned' is the primary output.
-        """
-        start_time = time.time()
-        k = k if k is not None else self.default_k
-        result = {
-            "seed_query": seed_query,
-            "technique": technique, # Store technique used
-            "retrieved_examples": None,
-            "topic_hint": None, # Add topic hint field
-            "generator_prompt": None,
-            "generated_attack_raw": None,
-            "generated_attack_cleaned": None,
-            "success": False,
-            "error": None
-        }
+            formatted_examples = self._format_retrieved_examples(search_results)
+            topic_hint = self._get_topic_hint(seed_query, search_results) # Now uses new logic
+            result["topic_hint"] = topic_hint
+            logger.debug(f"Formatted examples for prompt:\n{formatted_examples}")
+            logger.debug(f"Topic hint for prompt: {topic_hint}")
 
-        logger.info(f"Generating attack using technique '{technique}' for seed query: '{seed_query[:100]}...'")
-
-        # 1. Retrieve Examples
-        search_results = None
-        try:
-            logger.debug(f"Embedding query for retrieval: '{seed_query[:100]}...'")
-            query_embedding = self.query_embedder.encode(seed_query)
-
-            # Optional: Add technique to filter if metadata supports it
-            # current_filter = retrieval_filter.copy() if retrieval_filter else {}
-            # if self.metadata_has_technique: # Check if technique info exists in DB
-            #     current_filter['technique'] = technique
-            # logger.info(f"Retrieving {k} examples from vector store. Filter: {current_filter}")
-            # search_results = self.retriever.search(query=query_embedding, k=k, filter_criteria=current_filter)
-
-            # Simplified: Use generic filter for now
-            logger.info(f"Retrieving {k} examples from vector store. Filter: {retrieval_filter}")
-            search_results = self.retriever.search(
-                query=query_embedding,
-                k=k,
-                filter_criteria=retrieval_filter
-            )
-            result["retrieved_examples"] = search_results
-            if search_results:
-                 logger.info(f"Retrieved {len(search_results['ids'])} examples.")
-            else:
-                 logger.warning("Retrieval returned no examples.")
-
-        except Exception as e:
-            logger.error(f"Error during retrieval phase: {e}", exc_info=True)
-            result["error"] = f"Retrieval failed: {e}"
-            # Decide whether to continue or fail
-            # formatted_examples = "Error: Retrieval failed." # Allow generation without examples
-
-        # 2. Format examples & Get Topic Hint
-        formatted_examples = self._format_retrieved_examples(search_results)
-        topic_hint = self._get_topic_hint(seed_query, search_results)
-        result["topic_hint"] = topic_hint
-        logger.debug(f"Formatted examples for prompt:\n{formatted_examples}")
-        logger.debug(f"Topic hint for prompt: {topic_hint}")
-
-        # 3. Select and Construct Generator Prompt
-        if technique not in self.prompt_templates:
-            logger.error(f"Unknown technique '{technique}'. Available: {list(self.prompt_templates.keys())}")
-            result["error"] = f"Unknown technique '{technique}'"
+            if technique not in self.prompt_templates:
+                logger.error(f"Unknown technique '{technique}'. Available: {list(self.prompt_templates.keys())}")
+                result["error"] = f"Unknown technique '{technique}'"
+                return result
+            template = self.prompt_templates[technique]
+            try:
+                generator_prompt = template.format(
+                    topic_hint=topic_hint, 
+                    formatted_examples=formatted_examples
+                )
+                result["generator_prompt"] = generator_prompt
+                logger.debug(f"Constructed generator prompt using '{technique}' template (first 300 chars):\n{generator_prompt[:300]}...")
+            except KeyError as e:
+                logger.error(f"Prompt template error for technique '{technique}': Missing key {e}. Template:\n{template}")
+                result["error"] = f"Prompt template error: Missing key {e}"
+                return result
+            try:
+                logger.info(f"Sending prompt to generator LLM: {self.generator_llm.model_name}")
+                llm_output = self.generator_llm.generate(
+                    prompt=generator_prompt,
+                    options=generation_options,
+                    stream=False
+                )
+                result["generated_attack_raw"] = llm_output
+                logger.info(f"Received raw generation (length {len(llm_output)}): '{llm_output[:100]}...'")
+                cleaned_attack = llm_output.strip()
+                if len(cleaned_attack) > 1 and cleaned_attack.startswith('"') and cleaned_attack.endswith('"'):
+                    cleaned_attack = cleaned_attack[1:-1].strip()
+                elif len(cleaned_attack) > 1 and cleaned_attack.startswith("'") and cleaned_attack.endswith("'"):
+                    cleaned_attack = cleaned_attack[1:-1].strip()
+                if "Generated Prompt:" in cleaned_attack: # Common artifact
+                    cleaned_attack = cleaned_attack.split("Generated Prompt:", 1)[-1].strip()
+                result["generated_attack_cleaned"] = cleaned_attack
+                result["success"] = True 
+            except Exception as e:
+                logger.error(f"Error during generation phase with LLM {self.generator_llm.model_name}: {e}", exc_info=True)
+                result["error"] = f"Generation failed: {e}"
+                result["success"] = False 
+            end_time = time.time()
+            logger.info(f"Attack generation finished in {end_time - start_time:.2f}s. Generation Success: {result['success']}")
             return result
-
-        template = self.prompt_templates[technique]
-        try:
-             generator_prompt = template.format(
-                 topic_hint=topic_hint, # Use the hint
-                 formatted_examples=formatted_examples
-             )
-             result["generator_prompt"] = generator_prompt
-             logger.debug(f"Constructed generator prompt using '{technique}' template (first 300 chars):\n{generator_prompt[:300]}...")
-        except KeyError as e:
-             logger.error(f"Prompt template error for technique '{technique}': Missing key {e}. Template:\n{template}")
-             result["error"] = f"Prompt template error: Missing key {e}"
-             return result
-
-        # 4. Call Local LLM
-        try:
-            logger.info(f"Sending prompt to generator LLM: {self.generator_llm.model_name}")
-            llm_output = self.generator_llm.generate(
-                prompt=generator_prompt,
-                options=generation_options,
-                stream=False
-            )
-            result["generated_attack_raw"] = llm_output
-            logger.info(f"Received raw generation (length {len(llm_output)}): '{llm_output[:100]}...'")
-
-            # 5. Clean Output
-            cleaned_attack = llm_output.strip()
-            # Basic check: Remove potential leading/trailing quotes sometimes added by LLMs
-            if len(cleaned_attack) > 1 and cleaned_attack.startswith('"') and cleaned_attack.endswith('"'):
-                cleaned_attack = cleaned_attack[1:-1].strip()
-            elif len(cleaned_attack) > 1 and cleaned_attack.startswith("'") and cleaned_attack.endswith("'"):
-                 cleaned_attack = cleaned_attack[1:-1].strip()
-
-            # Remove common instruction-following artifacts if template asks for "Generated Prompt:"
-            if "Generated Prompt:" in cleaned_attack:
-                 cleaned_attack = cleaned_attack.split("Generated Prompt:", 1)[-1].strip()
-
-
-            result["generated_attack_cleaned"] = cleaned_attack
-            result["success"] = True # Mark as successful generation
-
-        except Exception as e:
-            logger.error(f"Error during generation phase with LLM {self.generator_llm.model_name}: {e}", exc_info=True)
-            result["error"] = f"Generation failed: {e}"
-            result["success"] = False # Mark as failed generation
-
-        end_time = time.time()
-        logger.info(f"Attack generation finished in {end_time - start_time:.2f}s. Generation Success: {result['success']}")
-        return result
-
-
-# --- Example Usage (Modified) ---
-if __name__ == "__main__":
-    logger.info("--- Attack Generator Example (Technique Focused) ---")
-
-    # --- Configuration ---
-    DB_PATH = str(DEFAULT_CHROMA_PATH)
-    COLLECTION_NAME = DEFAULT_COLLECTION_NAME
-    QUERY_EMBED_MODEL = DEFAULT_EMBEDDING_MODEL
-    GENERATOR_LLM_MODEL = DEFAULT_LLM_MODEL
-    OLLAMA_URL = DEFAULT_OLLAMA_URL
-    TEMPLATES_FILE = DEFAULT_PROMPT_TEMPLATES_PATH
-    NUM_EXAMPLES_TO_RETRIEVE = 3
-
-    # Example Seed Query / Topic
-    # seed = "illegal activities instructions"
-    seed = "How to create malware" # More specific seed for retrieval
-
-    # Techniques to test
-    techniques_to_test = ['generic', 'role_play', 'hypothetical']
-
-    # --- Initialization ---
-    print("\nInitializing components...")
-    # ...(same initialization block as before for query_embedder, vector_store, generator_llm)...
-    try:
-        query_embedder = EmbeddingModel(model_name=QUERY_EMBED_MODEL)
-        vector_store = VectorStore(collection_name=COLLECTION_NAME, persist_directory=DB_PATH)
-        if vector_store.collection.count() == 0:
-             logger.warning("Vector store is empty! Please run scripts/generate_embeddings.py first.")
-        generator_llm = OllamaLLM(model_name=GENERATOR_LLM_MODEL, ollama_url=OLLAMA_URL)
-
-        # Initialize Attack Generator with path to templates
-        attack_generator = AttackGenerator(
-            retriever=vector_store,
-            query_embedder=query_embedder,
-            generator_llm=generator_llm,
-            prompt_templates_path=TEMPLATES_FILE, # Pass the path
-            default_k=NUM_EXAMPLES_TO_RETRIEVE
-        )
-        print("Components initialized successfully.")
-    except Exception as e:
-        logger.error(f"Initialization failed: {e}", exc_info=True)
-        print(f"\nError during initialization: {e}.")
-        sys.exit(1)
-
-
-    # --- Generate Attacks for Different Techniques ---
-    print(f"\nGenerating attacks for seed query: '{seed}'")
-
-    for tech in techniques_to_test:
-        print(f"\n--- Testing Technique: {tech} ---")
-        try:
-            generation_result = attack_generator.generate_attack(
-                seed_query=seed,
-                technique=tech,
-                generation_options={'temperature': 0.75} # Slightly higher temp for creativity
-            )
-
-            print(f"Generation Success: {generation_result['success']}")
-            if generation_result['error']: print(f"Error: {generation_result['error']}")
-
-            # Optional: Display retrieved examples
-            retrieved = generation_result['retrieved_examples']
-            if retrieved and retrieved.get('documents'):
-                print(f"Retrieved Examples (Top {len(retrieved['documents'])}):")
-                for i, doc in enumerate(retrieved['documents']):
-                    print(f"  {i+1}. {doc[:100]}...")
-            else:
-                print("Retrieved Examples: None")
-
-            print(f"\nGenerated Attack ({tech}):")
-            print(generation_result.get('generated_attack_cleaned', "[No attack generated]"))
-
-        except Exception as e:
-            logger.error(f"Attack generation failed for technique {tech}: {e}", exc_info=True)
-            print(f"Error during attack generation for technique {tech}: {e}")
-
-    logger.info("--- Attack Generator Example End ---")
