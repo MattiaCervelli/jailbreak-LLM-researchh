@@ -78,8 +78,8 @@ The core methodology involves:
 ### 4.2. Installation Steps
 1.  **Clone the Repository:**
     ```bash
-    git clone <your-repository-url>
-    cd <your-repository-name>
+    git clone <https://github.com/MattiaCervelli/jailbreak-LLM-researchh.git>
+    cd jailbreak-LLM-researchh
     ```
 
 2.  **Create and Activate a Virtual Environment (Recommended):**
