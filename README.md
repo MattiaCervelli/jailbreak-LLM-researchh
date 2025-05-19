@@ -220,7 +220,7 @@ Use the Jupyter Notebook `notebooks/analyze_evaluation_results.ipynb` to load an
 *   `configs/prompt_templates.yaml`: Contains the prompt templates used by the `AttackGenerator` to instruct Mistral for different techniques (generic, role-play, hypothetical). These templates incorporate placeholders for `{topic_hint}` and `{formatted_examples}` (RAG context).
 *   `configs/seed_queries.txt`: A text file listing seed queries, categorized by harmful intent groups (e.g., `## Illegal Activities & Hacking`). Used by `run_generation.py` to initiate the attack generation process.
 
-## 8. Latest Results Summary (as of 2025-05-19, after RAG improvements)
+## 8. Latest Results Summary
 
 The latest full run utilized an improved RAG system providing richer context (original goal and outcome of retrieved examples) to the Mistral generator LLM.
 *   **Input:** ~100 seed queries, 3 techniques, N=3 candidates per seed/technique (900 generated prompts).
